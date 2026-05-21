@@ -1,0 +1,54 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+button,
+a,
+input,
+select {
+  outline-offset: 3px;
+}
+
+.app-shell {
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.16), transparent 26%),
+    linear-gradient(225deg, rgba(249, 115, 22, 0.10), transparent 24%),
+    linear-gradient(180deg, #f8fafc, #edf4f7 45%, #f8fafc);
+}
+
+.dark .app-shell {
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.16), transparent 26%),
+    linear-gradient(225deg, rgba(245, 158, 11, 0.12), transparent 24%),
+    linear-gradient(180deg, #111827, #0f172a 48%, #111827);
+}
+
+.map-country {
+  cursor: pointer;
+  transition: transform 180ms ease, fill 180ms ease, stroke 180ms ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.map-country:hover,
+.map-country:focus {
+  transform: translateY(-2px) scale(1.03);
+  stroke-width: 2.5;
+}
