@@ -1,69 +1,393 @@
+import { useId, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
+import { geoCentroid, geoConicConformal, geoGraticule, geoPath } from "d3-geo";
+import { feature as topoFeature } from "topojson-client";
+import world from "world-atlas/countries-50m.json";
 import countries from "../data/countries.json";
 
-const shapes = {
-  pt: "M72 390 L112 382 L124 446 L84 454 Z",
-  es: "M112 360 L218 350 L244 418 L174 470 L88 450 Z",
-  fr: "M190 260 L284 250 L316 316 L252 368 L178 342 Z",
-  gb: "M142 172 L192 188 L188 248 L138 252 L116 216 Z",
-  ie: "M82 190 L120 182 L130 230 L92 242 Z",
-  nl: "M238 198 L276 196 L282 232 L244 238 Z",
-  be: "M236 234 L276 232 L286 260 L246 266 Z",
-  de: "M282 204 L354 198 L376 266 L324 308 L282 268 Z",
-  ch: "M272 304 L330 300 L342 332 L286 342 Z",
-  it: "M332 330 L374 340 L402 430 L452 488 L418 510 L364 430 L326 382 Z",
-  at: "M340 296 L420 292 L440 326 L370 336 Z",
-  cz: "M336 260 L400 256 L420 288 L358 296 Z",
-  sk: "M408 286 L466 292 L466 320 L414 318 Z",
-  hu: "M404 322 L474 318 L492 356 L430 370 Z",
-  pl: "M386 208 L486 206 L506 272 L418 286 L374 252 Z",
-  dk: "M286 154 L330 150 L342 184 L300 190 Z",
-  no: "M294 32 L368 46 L348 146 L286 150 L248 92 Z",
-  se: "M376 42 L452 66 L454 162 L390 182 L350 142 Z",
-  fi: "M462 52 L548 68 L556 164 L498 182 L454 154 Z",
-  ee: "M486 170 L548 170 L552 196 L490 200 Z",
-  lv: "M486 202 L558 202 L560 232 L490 238 Z",
-  lt: "M482 238 L550 238 L554 270 L490 276 Z",
-  ua: "M506 276 L670 288 L684 372 L568 406 L496 356 Z",
-  ro: "M478 364 L554 382 L558 436 L488 448 L446 400 Z",
-  bg: "M476 430 L568 430 L586 466 L500 482 Z",
-  gr: "M444 466 L516 482 L540 544 L480 540 L430 504 Z",
-  hr: "M376 356 L442 372 L428 402 L392 392 L358 372 Z",
-  rs: "M432 386 L482 392 L492 432 L446 446 L418 414 Z",
-  tr: "M564 464 L710 464 L724 514 L596 524 Z",
+const width = 760;
+const height = 620;
+const mapInset = 24;
+const viewAspect = width / height;
+const defaultViewWidth = 540;
+const defaultViewHeight = defaultViewWidth / viewAspect;
+const defaultViewport = {
+  x: 190,
+  y: 96,
+  width: defaultViewWidth,
+  height: defaultViewHeight,
+};
+const minViewWidth = 42;
+const maxViewWidth = width;
+
+const mapIdByCountryId = {
+  ad: "020",
+  al: "008",
+  am: "051",
+  at: "040",
+  az: "031",
+  ba: "070",
+  be: "056",
+  bg: "100",
+  by: "112",
+  ch: "756",
+  cy: "196",
+  cz: "203",
+  de: "276",
+  dk: "208",
+  ee: "233",
+  es: "724",
+  fi: "246",
+  fr: "250",
+  gb: "826",
+  ge: "268",
+  gr: "300",
+  hr: "191",
+  hu: "348",
+  ie: "372",
+  is: "352",
+  it: "380",
+  li: "438",
+  lt: "440",
+  lu: "442",
+  lv: "428",
+  mc: "492",
+  md: "498",
+  me: "499",
+  mk: "807",
+  mt: "470",
+  nl: "528",
+  no: "578",
+  pl: "616",
+  pt: "620",
+  ro: "642",
+  ru: "643",
+  rs: "688",
+  si: "705",
+  sm: "674",
+  se: "752",
+  sk: "703",
+  tr: "792",
+  ua: "804",
+  va: "336",
 };
 
-export default function EuropeMap({ targetId, selectedId, onSelect, disabled = false }) {
-  return (
-    <svg viewBox="40 20 710 550" className="h-auto w-full" role="img" aria-label="Clickable simplified map of Europe">
-      <rect x="40" y="20" width="710" height="550" rx="18" fill="currentColor" className="text-sky-100 dark:text-slate-800" />
-      {countries.map((country) => {
-        const isSelected = selectedId === country.id;
-        const isTarget = targetId === country.id;
-        const showTarget = selectedId && isTarget;
-        const fill = isSelected || showTarget ? (isTarget ? "#10b981" : "#f43f5e") : undefined;
+const mapNameByCountryId = {
+  xk: "Kosovo",
+};
 
-        return (
-          <path
-            key={country.id}
-            d={shapes[country.id]}
-            tabIndex={disabled ? -1 : 0}
-            role="button"
-            aria-label={country.name}
-            onClick={() => !disabled && onSelect(country)}
-            onKeyDown={(event) => {
-              if (!disabled && (event.key === "Enter" || event.key === " ")) onSelect(country);
-            }}
-            className={`map-country stroke-slate-400 dark:stroke-slate-950 ${fill ? "" : "fill-white dark:fill-slate-700"}`}
-            fill={fill}
-            strokeWidth="1.5"
-          />
-        );
-      })}
-      {countries.map((country) => (
-        <text key={`${country.id}-label`} x={country.x} y={country.y} textAnchor="middle" className="pointer-events-none fill-slate-600 text-[11px] font-bold dark:fill-slate-200">
-          {country.id.toUpperCase()}
-        </text>
-      ))}
-    </svg>
+const microCountryIds = new Set(["ad", "li", "lu", "mc", "mt", "sm", "va"]);
+
+const countryById = new Map(countries.map((country) => [country.id, country]));
+const countryIdByMapId = new Map(Object.entries(mapIdByCountryId).map(([countryId, mapId]) => [mapId, countryId]));
+const countryIdByMapName = new Map(Object.entries(mapNameByCountryId).map(([countryId, name]) => [name, countryId]));
+const worldFeatures = topoFeature(world, world.objects.countries).features;
+const europeFrame = {
+  type: "Feature",
+  geometry: {
+    type: "MultiPoint",
+    coordinates: [
+      [-14, 25],
+      [70, 75],
+    ],
+  },
+};
+
+const projection = geoConicConformal()
+  .parallels([35, 65])
+  .rotate([-15, 0])
+  .fitExtent(
+    [
+      [mapInset, mapInset],
+      [width - mapInset, height - mapInset],
+    ],
+    europeFrame,
+  )
+  .clipExtent([
+    [0, 0],
+    [width, height],
+  ]);
+
+const path = geoPath(projection);
+const graticule = geoGraticule().extent([
+  [-14, 25],
+  [70, 75],
+]);
+
+function countryIdForFeature(geoFeature) {
+  return countryIdByMapId.get(geoFeature.id) || countryIdByMapName.get(geoFeature.properties.name);
+}
+
+const quizFeatures = worldFeatures
+  .map((geoFeature) => ({
+    country: countryById.get(countryIdForFeature(geoFeature)),
+    geoFeature,
+  }))
+  .filter(({ country }) => country)
+  .sort((a, b) => a.country.name.localeCompare(b.country.name));
+
+const microFeatures = quizFeatures.filter(({ country }) => microCountryIds.has(country.id));
+
+const contextFeatures = worldFeatures.filter((geoFeature) => {
+  if (countryIdForFeature(geoFeature)) return false;
+  const [longitude, latitude] = geoCentroid(geoFeature);
+  return longitude >= -16 && longitude <= 72 && latitude >= 25 && latitude <= 75;
+});
+
+const countryTone = {
+  default: "fill-white stroke-slate-400/90 hover:fill-emerald-50 dark:fill-slate-600 dark:stroke-slate-950 dark:hover:fill-emerald-900/60",
+  complete: "fill-emerald-100 stroke-emerald-500/80 hover:fill-emerald-200 dark:fill-emerald-900/45 dark:stroke-emerald-400/70 dark:hover:fill-emerald-900/70",
+  correct: "fill-emerald-400 stroke-emerald-950 dark:fill-emerald-500 dark:stroke-emerald-100",
+  highlight: "fill-amber-300 stroke-amber-800 dark:fill-amber-400 dark:stroke-amber-100",
+  wrong: "fill-rose-400 stroke-rose-950 dark:fill-rose-500 dark:stroke-rose-100",
+};
+
+const microTone = {
+  default: "fill-slate-700 stroke-white dark:fill-slate-100 dark:stroke-slate-950",
+  complete: "fill-emerald-600 stroke-white dark:fill-emerald-300 dark:stroke-slate-950",
+  correct: "fill-emerald-500 stroke-emerald-950 dark:stroke-emerald-100",
+  highlight: "fill-amber-400 stroke-amber-900 dark:stroke-amber-100",
+  wrong: "fill-rose-500 stroke-rose-950 dark:stroke-rose-100",
+};
+
+function clampViewport(viewport) {
+  const nextWidth = Math.min(Math.max(viewport.width, minViewWidth), maxViewWidth);
+  const nextHeight = nextWidth / viewAspect;
+
+  return {
+    x: Math.min(Math.max(viewport.x, 0), width - nextWidth),
+    y: Math.min(Math.max(viewport.y, 0), height - nextHeight),
+    width: nextWidth,
+    height: nextHeight,
+  };
+}
+
+function countryStatus(countryId, targetId, selectedId, highlightIds, completedIds) {
+  const isSelected = selectedId === countryId;
+  const isTarget = targetId === countryId;
+
+  if (isSelected && isTarget) return "correct";
+  if (isSelected) return "wrong";
+  if (highlightIds.includes(countryId)) return "highlight";
+  if (completedIds.has(countryId)) return "complete";
+  return "default";
+}
+
+export default function EuropeMap({
+  targetId,
+  selectedId,
+  onSelect,
+  onZoom,
+  disabled = false,
+  highlightIds = [],
+  completedIds = [],
+  className = "",
+}) {
+  const mapId = useId().replace(/:/g, "");
+  const clipId = `${mapId}-clip`;
+  const waterId = `${mapId}-water`;
+  const activeHighlightIds = Array.isArray(highlightIds) ? highlightIds : [];
+  const activeCompletedIds = new Set(Array.isArray(completedIds) ? completedIds : []);
+  const canSelect = !disabled && typeof onSelect === "function";
+  const [viewport, setViewport] = useState(defaultViewport);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  function handlePointerDown(event) {
+    if (event.button !== 0) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const countryElement = event.target instanceof Element ? event.target.closest("[data-country-id]") : null;
+
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startViewport: viewport,
+      screenWidth: bounds.width,
+      screenHeight: bounds.height,
+      countryId: countryElement?.dataset.countryId,
+      moved: false,
+    };
+    setIsDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handlePointerMove(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      drag.moved = true;
+      suppressClickRef.current = true;
+    }
+
+    const scaleX = drag.startViewport.width / drag.screenWidth;
+    const scaleY = drag.startViewport.height / drag.screenHeight;
+    setViewport(
+      clampViewport({
+        ...drag.startViewport,
+        x: drag.startViewport.x - deltaX * scaleX,
+        y: drag.startViewport.y - deltaY * scaleY,
+      }),
+    );
+  }
+
+  function handleWheel(event) {
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const pointerX = (event.clientX - bounds.left) / bounds.width;
+    const pointerY = (event.clientY - bounds.top) / bounds.height;
+    const mapX = viewport.x + pointerX * viewport.width;
+    const mapY = viewport.y + pointerY * viewport.height;
+    const zoomFactor = event.deltaY < 0 ? 0.84 : 1.19;
+    const nextWidth = viewport.width * zoomFactor;
+    const nextHeight = nextWidth / viewAspect;
+
+    onZoom?.();
+    setViewport(
+      clampViewport({
+        x: mapX - pointerX * nextWidth,
+        y: mapY - pointerY * nextHeight,
+        width: nextWidth,
+        height: nextHeight,
+      }),
+    );
+  }
+
+  function finishDrag(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    dragRef.current = null;
+    setIsDragging(false);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (!drag.moved && canSelect && drag.countryId) {
+      const country = countryById.get(drag.countryId);
+      if (country) onSelect(country);
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+      return;
+    }
+
+    if (drag.moved) {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+  }
+
+  function handleClickCapture(event) {
+    if (!suppressClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function resetViewport() {
+    dragRef.current = null;
+    suppressClickRef.current = false;
+    setIsDragging(false);
+    setViewport(defaultViewport);
+  }
+
+  return (
+    <div className={["relative", className].filter(Boolean).join(" ")}>
+      <button
+        type="button"
+        onClick={resetViewport}
+        className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-lg border border-white/75 bg-white/90 text-slate-700 shadow-soft backdrop-blur transition hover:bg-white hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-950/85 dark:text-slate-100 dark:hover:text-emerald-300"
+        aria-label="Reset map view"
+        title="Reset map view"
+      >
+        <RotateCcw size={18} aria-hidden="true" />
+      </button>
+      <svg
+        viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
+        className={`map-surface h-auto w-full rounded-lg ${isDragging ? "is-dragging" : ""}`}
+        role="img"
+        aria-label="Draggable clickable map of Europe"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onWheel={handleWheel}
+        onClickCapture={handleClickCapture}
+      >
+        <defs>
+          <linearGradient id={waterId} x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#dff7fb" />
+            <stop offset="52%" stopColor="#c7edf4" />
+            <stop offset="100%" stopColor="#bae6fd" />
+          </linearGradient>
+          <clipPath id={clipId}>
+            <rect x="0" y="0" width={width} height={height} rx="24" />
+          </clipPath>
+        </defs>
+
+        <rect x="0" y="0" width={width} height={height} rx="24" fill={`url(#${waterId})`} className="dark:fill-slate-900" />
+
+        <g clipPath={`url(#${clipId})`}>
+          <path d={path(graticule())} className="fill-none stroke-white/70 dark:stroke-white/10" strokeWidth="0.85" />
+
+          {contextFeatures.map((geoFeature) => (
+            <path
+              key={geoFeature.id}
+              d={path(geoFeature)}
+              className="fill-white/40 stroke-white/70 dark:fill-slate-700/45 dark:stroke-slate-950/70"
+              strokeWidth="0.7"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+
+          {quizFeatures.map(({ country, geoFeature }) => {
+            const status = countryStatus(country.id, targetId, selectedId, activeHighlightIds, activeCompletedIds);
+
+            return (
+              <path
+                key={country.id}
+                data-country-id={country.id}
+                d={path(geoFeature)}
+                tabIndex={canSelect ? 0 : -1}
+                role={canSelect ? "button" : undefined}
+                aria-label={country.name}
+                aria-disabled={!canSelect}
+                onKeyDown={(event) => {
+                  if (!canSelect || (event.key !== "Enter" && event.key !== " ")) return;
+                  event.preventDefault();
+                  onSelect(country);
+                }}
+                className={`map-country ${countryTone[status]}`}
+                strokeWidth={status === "default" ? 0.85 : 1.35}
+                vectorEffect="non-scaling-stroke"
+              >
+                <title>{country.name}</title>
+              </path>
+            );
+          })}
+
+          {microFeatures.map(({ country, geoFeature }) => {
+            const [x, y] = path.centroid(geoFeature);
+            const status = countryStatus(country.id, targetId, selectedId, activeHighlightIds, activeCompletedIds);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+            return (
+              <g key={`${country.id}-target`} data-country-id={country.id} className="map-micro-target" aria-label={country.name}>
+                <circle className="map-micro-hit fill-transparent" cx={x} cy={y} r="11" />
+                <circle className={`map-micro-dot ${microTone[status]}`} cx={x} cy={y} r="4.25" strokeWidth="1.3" vectorEffect="non-scaling-stroke">
+                  <title>{country.name}</title>
+                </circle>
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+    </div>
   );
 }

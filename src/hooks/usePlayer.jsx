@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { accuracyFor, defaultProfile, loadProfile, loadTheme, saveProfile, saveTheme } from "../utils/storage";
+import { achievementsForResult } from "../utils/achievements";
 
 const PlayerContext = createContext(null);
 
@@ -27,11 +28,23 @@ export function PlayerProvider({ children }) {
         const correctAnswers = current.correctAnswers + result.correct;
         const wrongAnswers = current.wrongAnswers + result.wrong;
         const bestStreak = Math.max(current.bestStreak, result.bestStreak);
+        const durationSeconds = Number.isFinite(result.durationSeconds) ? result.durationSeconds : null;
+        const completedRun = (result.questionLimit || 0) > 0 && result.correct >= result.questionLimit;
+        const bestRegionTimes = { ...(current.bestRegionTimes || {}) };
+        let fastestEuropeRunSeconds = current.fastestEuropeRunSeconds ?? null;
         const achievements = new Set(current.achievements);
 
-        if (result.score >= 80) achievements.add("Sharp Explorer");
-        if (result.bestStreak >= 5) achievements.add("Streak Scholar");
-        if (correctAnswers >= 25) achievements.add("Europe Regular");
+        if (durationSeconds !== null && result.regionId && completedRun) {
+          bestRegionTimes[result.regionId] =
+            bestRegionTimes[result.regionId] == null ? durationSeconds : Math.min(bestRegionTimes[result.regionId], durationSeconds);
+        }
+
+        if (durationSeconds !== null && result.mode === "countries" && completedRun) {
+          fastestEuropeRunSeconds =
+            fastestEuropeRunSeconds == null ? durationSeconds : Math.min(fastestEuropeRunSeconds, durationSeconds);
+        }
+
+        achievementsForResult(result, { correctAnswers }).forEach((achievement) => achievements.add(achievement));
 
         return {
           ...current,
@@ -41,13 +54,15 @@ export function PlayerProvider({ children }) {
           bestStreak,
           quizzesPlayed: current.quizzesPlayed + 1,
           highScore: Math.max(current.highScore, result.score),
+          fastestEuropeRunSeconds,
+          bestRegionTimes,
           achievements: Array.from(achievements),
         };
       });
     }
 
     function resetProfile() {
-      setProfile(defaultProfile);
+      setProfile((current) => ({ ...defaultProfile, name: current.name }));
     }
 
     function setTheme(nextTheme) {

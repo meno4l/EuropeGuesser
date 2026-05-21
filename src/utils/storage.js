@@ -9,6 +9,8 @@ export const defaultProfile = {
   correctAnswers: 0,
   wrongAnswers: 0,
   bestStreak: 0,
+  fastestEuropeRunSeconds: null,
+  bestRegionTimes: {},
   achievements: [],
 };
 

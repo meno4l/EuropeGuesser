@@ -1,12 +1,6 @@
 import countries from "../data/countries.json";
 
-const difficultyRank = { easy: 1, medium: 2, hard: 3 };
-
-export function countriesForDifficulty(difficulty) {
-  if (difficulty === "easy") return countries.filter((country) => difficultyRank[country.difficulty] <= 1);
-  if (difficulty === "medium") return countries.filter((country) => difficultyRank[country.difficulty] <= 2);
-  return countries;
-}
+export const countryPool = countries;
 
 export function shuffle(items) {
   return [...items].sort(() => Math.random() - 0.5);
@@ -45,6 +39,10 @@ export function makeFlagQuestion(pool) {
 
 export function makeMapQuestion(pool) {
   const country = shuffle(pool)[0];
+  return makeCountryQuestion(country);
+}
+
+export function makeCountryQuestion(country) {
   return {
     type: "map",
     prompt: `Click ${country.name} on the map.`,
@@ -61,8 +59,7 @@ export function makeQuestion(mode, pool) {
   return [makeCapitalQuestion, makeFlagQuestion, makeMapQuestion][Math.floor(Math.random() * 3)](pool);
 }
 
-export function scoreAnswer(isCorrect, streak, difficulty) {
+export function scoreAnswer(isCorrect, streak) {
   if (!isCorrect) return 0;
-  const difficultyBonus = difficulty === "hard" ? 8 : difficulty === "medium" ? 4 : 0;
-  return 10 + difficultyBonus + Math.min(streak, 5) * 2;
+  return 10 + Math.min(streak, 5) * 2;
 }

@@ -3,6 +3,7 @@ import { BarChart3, Flame, Medal, Percent, Play, Trophy } from "lucide-react";
 import Card from "../components/Card";
 import StatCard from "../components/StatCard";
 import { usePlayer } from "../hooks/usePlayer";
+import { practiceRegions } from "../data/practiceRegions";
 
 export default function Dashboard() {
   const { profile, accuracy } = usePlayer();
@@ -29,22 +30,40 @@ export default function Dashboard() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        <Card>
-          <h2 className="text-xl font-extrabold">Quiz modes</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {[
-              ["/quiz/capitals", "Capital Guessing", "Country names, capital city answers."],
-              ["/quiz/map", "Map Guessing", "Clickable SVG Europe practice."],
-              ["/quiz/flags", "Flag Quiz", "Visual recognition with instant feedback."],
-              ["/quiz/mixed", "Mixed Challenge", "Random capitals, flags, and maps."],
-            ].map(([to, title, text]) => (
-              <Link key={to} to={to} className="rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-slate-700 dark:bg-slate-800">
-                <h3 className="font-extrabold">{title}</h3>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{text}</p>
-              </Link>
-            ))}
-          </div>
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <h2 className="text-xl font-extrabold">Quiz modes</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                ["/quiz/capitals", "Capital Guessing", "Country names, capital city answers."],
+                ["/quiz/europe", "Europe Country Run", "Find every country once in one full session."],
+                ["/quiz/flags", "Flag Quiz", "Visual recognition with instant feedback."],
+                ["/quiz/mixed", "Mixed Challenge", "Random capitals, flags, and maps."],
+              ].map(([to, title, text]) => (
+                <Link key={to} to={to} className="rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-slate-700 dark:bg-slate-800">
+                  <h3 className="font-extrabold">{title}</h3>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{text}</p>
+                </Link>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="text-xl font-extrabold">Practice by region</h2>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {practiceRegions.map((region) => (
+                <Link
+                  key={region.id}
+                  to={`/quiz/practice/${region.id}`}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-slate-700 dark:bg-slate-800"
+                >
+                  <span>{region.label}</span>
+                  <span className="text-slate-500 dark:text-slate-400">{region.countryIds.length}</span>
+                </Link>
+              ))}
+            </div>
+          </Card>
+        </div>
 
         <Card>
           <div className="flex items-center gap-3">

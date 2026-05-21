@@ -42,13 +42,63 @@ select {
 
 .map-country {
   cursor: pointer;
-  transition: transform 180ms ease, fill 180ms ease, stroke 180ms ease;
+  transition: filter 180ms ease, fill 180ms ease, stroke 180ms ease, transform 180ms ease;
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.map-country:hover,
-.map-country:focus {
-  transform: translateY(-2px) scale(1.03);
-  stroke-width: 2.5;
+.map-surface {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  overscroll-behavior: contain;
+}
+
+.map-surface.is-dragging {
+  cursor: grabbing;
+}
+
+.map-country:not([aria-disabled="true"]):hover,
+.map-country:not([aria-disabled="true"]):focus-visible {
+  filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.18));
+  transform: translateY(-1px);
+}
+
+.map-country:not([aria-disabled="true"]):focus-visible {
+  stroke: #047857;
+  stroke-width: 2px;
+}
+
+.map-country[aria-disabled="true"] {
+  cursor: grab;
+}
+
+.map-micro-target {
+  cursor: pointer;
+}
+
+.map-micro-hit {
+  pointer-events: auto;
+}
+
+.map-micro-dot {
+  filter: drop-shadow(0 3px 5px rgba(15, 23, 42, 0.22));
+  transition: filter 180ms ease, r 180ms ease, transform 180ms ease;
+}
+
+.map-micro-target:hover .map-micro-dot,
+.map-micro-target:focus-visible .map-micro-dot {
+  filter: drop-shadow(0 6px 9px rgba(15, 23, 42, 0.26));
+  r: 5.5px;
+}
+
+.map-surface.is-dragging .map-country,
+.map-surface.is-dragging .map-country[aria-disabled="true"],
+.map-surface.is-dragging .map-micro-target {
+  cursor: grabbing;
+}
+
+.flag-image {
+  display: block;
+  background: #ffffff;
 }

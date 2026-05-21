@@ -27,7 +27,9 @@ function AppRoutes() {
         <Route index element={<Home />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/quiz/capitals" element={<QuizPage mode="capital" />} />
-        <Route path="/quiz/map" element={<QuizPage mode="map" />} />
+        <Route path="/quiz/map" element={<Navigate to="/quiz/europe" replace />} />
+        <Route path="/quiz/europe" element={<QuizPage mode="countries" />} />
+        <Route path="/quiz/practice/:regionId" element={<QuizPage mode="region" />} />
         <Route path="/quiz/flags" element={<QuizPage mode="flag" />} />
         <Route path="/quiz/mixed" element={<QuizPage mode="mixed" />} />
         <Route path="/stats" element={<Stats />} />

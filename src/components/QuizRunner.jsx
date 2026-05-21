@@ -1,21 +1,79 @@
-import { useMemo, useState } from "react";
-import { CheckCircle2, RotateCcw, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, Clock, RotateCcw, Volume2, VolumeX, XCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Button from "./Button";
 import Card from "./Card";
-import DifficultySelect from "./DifficultySelect";
 import EuropeMap from "./EuropeMap";
+import FlagImage from "./FlagImage";
 import ProgressBar from "./ProgressBar";
 import { usePlayer } from "../hooks/usePlayer";
-import { countriesForDifficulty, makeQuestion, scoreAnswer } from "../utils/quiz";
+import { achievementsForResult } from "../utils/achievements";
+import { countryPool, makeCountryQuestion, makeQuestion, scoreAnswer, shuffle } from "../utils/quiz";
 
-const questionLimit = 8;
+const shortQuestionLimit = 8;
+const autoAdvanceDelay = 550;
+const soundPreferenceKey = "europeGuesserSound";
+const mapRunModes = new Set(["countries", "region"]);
+const alpineCountryIds = new Set(["at", "ch", "li", "si"]);
+const pyreneesCountryIds = new Set(["ad"]);
+const caucasusCountryIds = new Set(["am", "az", "ge"]);
 
-export default function QuizRunner({ mode, title, description }) {
-  const { completeQuiz } = usePlayer();
-  const [difficulty, setDifficulty] = useState("medium");
-  const [questionNumber, setQuestionNumber] = useState(1);
-  const [question, setQuestion] = useState(() => makeQuestion(mode, countriesForDifficulty("medium")));
+function isMapRunMode(mode) {
+  return mapRunModes.has(mode);
+}
+
+function createRound(mode, pool) {
+  const questionQueue = isMapRunMode(mode) ? shuffle(pool) : [];
+  return {
+    questionNumber: 1,
+    questionQueue,
+    question: isMapRunMode(mode) ? makeCountryQuestion(questionQueue[0]) : makeQuestion(mode, pool),
+  };
+}
+
+function questionLimitFor(mode, questionQueue) {
+  return isMapRunMode(mode) ? questionQueue.length : shortQuestionLimit;
+}
+
+function nextQuestionFor(mode, questionQueue, questionNumber, pool) {
+  return isMapRunMode(mode) ? makeCountryQuestion(questionQueue[questionNumber - 1]) : makeQuestion(mode, pool);
+}
+
+function formatDuration(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function loadSoundPreference() {
+  try {
+    return localStorage.getItem(soundPreferenceKey) !== "muted";
+  } catch {
+    return true;
+  }
+}
+
+function mapHintFor(country) {
+  if (alpineCountryIds.has(country.id)) return "Hint: look around the Alps.";
+  if (pyreneesCountryIds.has(country.id)) return "Hint: look along the Pyrenees between France and Spain.";
+  if (caucasusCountryIds.has(country.id)) return "Hint: look near the Caucasus at the eastern edge of the map.";
+  if (country.region === "Balkans") return "Hint: look around the Balkans.";
+  if (country.region === "Baltics") return "Hint: look around the Baltic coast.";
+  if (country.region === "Northern Europe") return "Hint: look toward northern Europe.";
+  if (country.region === "Western Europe") return "Hint: look toward western Europe.";
+  if (country.region === "Eastern Europe") return "Hint: look toward eastern Europe.";
+  if (country.region === "Southern Europe") return "Hint: look along southern Europe and the Mediterranean.";
+  return `Hint: look around ${country.region}.`;
+}
+
+export default function QuizRunner({ mode, regionId, title, description, pool = countryPool }) {
+  const activePool = pool.length ? pool : countryPool;
+  const poolKey = activePool.map((country) => country.id).join("|");
+  const mapRun = isMapRunMode(mode);
+  const { completeQuiz, profile } = usePlayer();
+  const advanceTimerRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const [round, setRound] = useState(() => createRound(mode, activePool));
   const [selected, setSelected] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [score, setScore] = useState(0);
@@ -23,15 +81,46 @@ export default function QuizRunner({ mode, title, description }) {
   const [wrong, setWrong] = useState(0);
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
+  const [completedIds, setCompletedIds] = useState([]);
+  const [mapWrongAttempts, setMapWrongAttempts] = useState(0);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [usedZoom, setUsedZoom] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(loadSoundPreference);
+  const [sessionBadges, setSessionBadges] = useState([]);
   const [finished, setFinished] = useState(false);
+  const { questionNumber, question, questionQueue } = round;
+  const questionLimit = questionLimitFor(mode, questionQueue);
+  const attempts = correct + wrong;
+  const sessionAccuracy = attempts ? Math.round((correct / attempts) * 100) : 100;
+  const modeEyebrow = mode === "countries" ? "Full Europe" : mode === "region" ? "Region practice" : mode === "mixed" ? "Mixed mode" : `${mode} quiz`;
+  const focusCopy = mapRun
+    ? "Read the prompt, find the country, and click the map. Drag to move around Europe and use the mouse wheel to zoom into small countries."
+    : mode === "flag"
+      ? "Study the flag, then pick the matching country. The timer keeps running until the round is complete."
+      : "Pick the best answer and keep your streak alive. The timer keeps running until the round is complete.";
 
-  const pool = useMemo(() => countriesForDifficulty(difficulty), [difficulty]);
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(advanceTimerRef.current);
+      audioContextRef.current?.close?.();
+    };
+  }, []);
 
-  function reset(nextDifficulty = difficulty) {
-    const nextPool = countriesForDifficulty(nextDifficulty);
-    setDifficulty(nextDifficulty);
-    setQuestionNumber(1);
-    setQuestion(makeQuestion(mode, nextPool));
+  useEffect(() => {
+    if (!mapRun) return undefined;
+
+    function handlePageShow(event) {
+      if (event.persisted) reset();
+    }
+
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [mapRun]);
+
+  useEffect(() => {
+    window.clearTimeout(advanceTimerRef.current);
+    setRound(createRound(mode, activePool));
     setSelected(null);
     setFeedback(null);
     setScore(0);
@@ -39,55 +128,162 @@ export default function QuizRunner({ mode, title, description }) {
     setWrong(0);
     setStreak(0);
     setBestStreak(0);
+    setCompletedIds([]);
+    setMapWrongAttempts(0);
+    setStartedAt(Date.now());
+    setElapsedSeconds(0);
+    setUsedZoom(false);
+    setSessionBadges([]);
+    setFinished(false);
+  }, [mode, poolKey]);
+
+  useEffect(() => {
+    if (finished) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [finished, startedAt]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(soundPreferenceKey, soundEnabled ? "on" : "muted");
+    } catch {
+      // Sound preference is non-critical.
+    }
+  }, [soundEnabled]);
+
+  function reset() {
+    window.clearTimeout(advanceTimerRef.current);
+    setRound(createRound(mode, activePool));
+    setSelected(null);
+    setFeedback(null);
+    setScore(0);
+    setCorrect(0);
+    setWrong(0);
+    setStreak(0);
+    setBestStreak(0);
+    setCompletedIds([]);
+    setMapWrongAttempts(0);
+    setStartedAt(Date.now());
+    setElapsedSeconds(0);
+    setUsedZoom(false);
+    setSessionBadges([]);
     setFinished(false);
   }
 
-  function answer(option) {
-    if (feedback) return;
-    const isCorrect = option.id === question.country.id;
-    const nextStreak = isCorrect ? streak + 1 : 0;
-    const gained = scoreAnswer(isCorrect, nextStreak, difficulty);
+  function playFeedbackSound(isCorrect) {
+    if (!soundEnabled || typeof window === "undefined") return;
 
-    setSelected(option.id);
-    setFeedback({ isCorrect, gained });
-    setScore((current) => current + gained);
-    setCorrect((current) => current + (isCorrect ? 1 : 0));
-    setWrong((current) => current + (isCorrect ? 0 : 1));
-    setStreak(nextStreak);
-    setBestStreak((current) => Math.max(current, nextStreak));
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+
+    try {
+      const context = audioContextRef.current || new AudioContext();
+      audioContextRef.current = context;
+      context.resume?.();
+
+      const now = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = isCorrect ? "triangle" : "sine";
+      oscillator.frequency.setValueAtTime(isCorrect ? 660 : 220, now);
+      oscillator.frequency.exponentialRampToValueAtTime(isCorrect ? 920 : 140, now + 0.12);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(isCorrect ? 0.055 : 0.045, now + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+    } catch {
+      // Some browsers block audio until they are ready; the game can continue silently.
+    }
   }
 
-  function next() {
-    if (questionNumber === questionLimit) {
-      const result = {
-        score,
-        correct,
-        wrong,
-        bestStreak,
-      };
-      completeQuiz(result);
-      setFinished(true);
-      return;
+  function answer(option) {
+    if (feedback?.isCorrect || (feedback && question.type !== "map")) return;
+    const isCorrect = option.id === question.country.id;
+    const nextStreak = isCorrect ? streak + 1 : 0;
+    const gained = scoreAnswer(isCorrect, nextStreak);
+    const nextScore = score + gained;
+    const nextCorrect = correct + (isCorrect ? 1 : 0);
+    const nextWrong = wrong + (isCorrect ? 0 : 1);
+    const nextBestStreak = Math.max(bestStreak, nextStreak);
+    const nextMapWrongAttempts = question.type === "map" && !isCorrect ? mapWrongAttempts + 1 : 0;
+
+    playFeedbackSound(isCorrect);
+    setSelected(option.id);
+    setFeedback({ isCorrect, gained });
+    setScore(nextScore);
+    setCorrect(nextCorrect);
+    setWrong(nextWrong);
+    setStreak(nextStreak);
+    setBestStreak(nextBestStreak);
+    setMapWrongAttempts(nextMapWrongAttempts);
+
+    if (question.type === "map" && isCorrect) {
+      setCompletedIds((current) => (current.includes(question.country.id) ? current : [...current, question.country.id]));
     }
 
-    setQuestionNumber((current) => current + 1);
-    setQuestion(makeQuestion(mode, pool));
-    setSelected(null);
-    setFeedback(null);
+    if (question.type === "map" && !isCorrect) return;
+
+    window.clearTimeout(advanceTimerRef.current);
+    advanceTimerRef.current = window.setTimeout(() => {
+      if (questionNumber === questionLimit) {
+        const durationSeconds = Math.floor((Date.now() - startedAt) / 1000);
+        const result = {
+          score: nextScore,
+          correct: nextCorrect,
+          wrong: nextWrong,
+          bestStreak: nextBestStreak,
+          questionLimit,
+          mode,
+          regionId,
+          durationSeconds,
+          isMapRun: mapRun,
+          usedZoom,
+        };
+        const badges = achievementsForResult(result, { correctAnswers: profile.correctAnswers + nextCorrect });
+
+        setElapsedSeconds(durationSeconds);
+        setSessionBadges(badges.filter((badge) => !profile.achievements.includes(badge)));
+        completeQuiz(result);
+        setFinished(true);
+        return;
+      }
+
+      setRound((current) => {
+        const nextNumber = current.questionNumber + 1;
+        return {
+          ...current,
+          questionNumber: nextNumber,
+          question: nextQuestionFor(mode, current.questionQueue, nextNumber, activePool),
+        };
+      });
+      setSelected(null);
+      setFeedback(null);
+      setMapWrongAttempts(0);
+    }, autoAdvanceDelay);
   }
 
   if (finished) {
-    const accuracy = Math.round((correct / questionLimit) * 100);
+    const accuracy = attempts ? Math.round((correct / attempts) * 100) : 0;
     return (
       <Card className="mx-auto max-w-3xl text-center">
         <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">Results</p>
         <h1 className="mt-3 text-4xl font-extrabold text-slate-950 dark:text-white">Quiz complete</h1>
-        <div className="mt-8 grid gap-3 sm:grid-cols-4">
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {[
             ["Score", score],
             ["Correct", correct],
             ["Accuracy", `${accuracy}%`],
             ["Best streak", bestStreak],
+            ["Time", formatDuration(elapsedSeconds)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg bg-slate-100 p-4 dark:bg-slate-800">
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</p>
@@ -95,6 +291,18 @@ export default function QuizRunner({ mode, title, description }) {
             </div>
           ))}
         </div>
+        {sessionBadges.length > 0 && (
+          <div className="mt-6 rounded-lg bg-amber-100 p-4 text-amber-950 dark:bg-amber-400/15 dark:text-amber-100">
+            <p className="text-sm font-extrabold uppercase tracking-[0.16em]">New badges</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {sessionBadges.map((badge) => (
+                <span key={badge} className="rounded-lg bg-white/70 px-3 py-2 text-sm font-bold dark:bg-slate-950/40">
+                  {badge}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Button onClick={() => reset()}>
             <RotateCcw size={18} aria-hidden="true" />
@@ -108,18 +316,12 @@ export default function QuizRunner({ mode, title, description }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <section>
-        <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div className="mb-6">
           <div>
-            <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">{mode === "mixed" ? "Mixed mode" : `${mode} quiz`}</p>
+            <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">{modeEyebrow}</p>
             <h1 className="mt-2 text-3xl font-extrabold text-slate-950 dark:text-white sm:text-4xl">{title}</h1>
             <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">{description}</p>
           </div>
-          <DifficultySelect
-            value={difficulty}
-            onChange={(nextDifficulty) => {
-              reset(nextDifficulty);
-            }}
-          />
         </div>
 
         <Card>
@@ -130,14 +332,23 @@ export default function QuizRunner({ mode, title, description }) {
                 <p className="text-xl font-extrabold text-slate-950 dark:text-white">{question.prompt}</p>
 
                 {question.type === "flag" && (
-                  <div className="mt-6 grid min-h-36 place-items-center rounded-lg bg-slate-100 text-8xl dark:bg-slate-800" aria-label={`Flag for ${question.country.name}`}>
-                    {question.country.flag}
+                  <div className="mt-6 grid min-h-48 place-items-center rounded-lg border border-slate-200 bg-gradient-to-br from-sky-50 via-white to-amber-50 p-6 dark:border-slate-700 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800" aria-label={`Flag for ${question.country.name}`}>
+                    <div className="grid w-full max-w-sm place-items-center rounded-lg bg-white px-6 py-5 shadow-soft dark:bg-slate-950">
+                      <FlagImage country={question.country} className="max-h-44 w-full rounded-md object-contain shadow-sm" />
+                    </div>
                   </div>
                 )}
 
                 {question.type === "map" ? (
-                  <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-sky-50 dark:border-slate-700 dark:bg-slate-800">
-                    <EuropeMap targetId={question.country.id} selectedId={selected} onSelect={(country) => answer(country)} disabled={Boolean(feedback)} />
+                  <div className="mt-6 rounded-lg border border-sky-200 bg-sky-50 p-3 shadow-inner dark:border-slate-700 dark:bg-slate-800">
+                    <EuropeMap
+                      targetId={question.country.id}
+                      selectedId={selected}
+                      onSelect={(country) => answer(country)}
+                      disabled={Boolean(feedback?.isCorrect)}
+                      completedIds={mapRun ? completedIds : []}
+                      onZoom={() => setUsedZoom(true)}
+                    />
                   </div>
                 ) : (
                   <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -170,12 +381,20 @@ export default function QuizRunner({ mode, title, description }) {
           </AnimatePresence>
 
           {feedback && (
-            <div className={`mt-6 flex flex-col gap-4 rounded-lg p-4 sm:flex-row sm:items-center sm:justify-between ${feedback.isCorrect ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-100" : "bg-rose-100 text-rose-900 dark:bg-rose-500/15 dark:text-rose-100"}`} role="status">
+            <div className={`mt-6 rounded-lg p-4 ${feedback.isCorrect ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-100" : "bg-rose-100 text-rose-900 dark:bg-rose-500/15 dark:text-rose-100"}`} role="status">
               <div className="flex items-center gap-3 font-bold">
                 {feedback.isCorrect ? <CheckCircle2 aria-hidden="true" /> : <XCircle aria-hidden="true" />}
-                <span>{feedback.isCorrect ? `Correct. +${feedback.gained} points` : `Not quite. Answer: ${question.answer}`}</span>
+                <span>
+                  {feedback.isCorrect
+                    ? `Correct. +${feedback.gained} points`
+                    : question.type === "map"
+                      ? "Not quite. Try again."
+                      : `Not quite. Answer: ${question.answer}`}
+                </span>
               </div>
-              <Button onClick={next}>{questionNumber === questionLimit ? "See results" : "Next"}</Button>
+              {question.type === "map" && !feedback.isCorrect && mapWrongAttempts >= 2 && (
+                <p className="mt-2 text-sm font-semibold opacity-85">{mapHintFor(question.country)}</p>
+              )}
             </div>
           )}
         </Card>
@@ -183,13 +402,28 @@ export default function QuizRunner({ mode, title, description }) {
 
       <aside className="space-y-4">
         <Card>
-          <h2 className="text-lg font-extrabold">Session</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-extrabold">Session</h2>
+            <button
+              type="button"
+              onClick={() => setSoundEnabled((current) => !current)}
+              className="grid size-10 place-items-center rounded-lg bg-slate-100 text-slate-700 transition hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+              aria-label={soundEnabled ? "Mute sound feedback" : "Unmute sound feedback"}
+              title={soundEnabled ? "Mute sound feedback" : "Unmute sound feedback"}
+            >
+              {soundEnabled ? <Volume2 size={18} aria-hidden="true" /> : <VolumeX size={18} aria-hidden="true" />}
+            </button>
+          </div>
           <dl className="mt-4 grid grid-cols-2 gap-3">
             {[
               ["Score", score],
               ["Correct", correct],
               ["Wrong", wrong],
+              ["Accuracy", `${sessionAccuracy}%`],
               ["Streak", streak],
+              ["Progress", `${questionNumber}/${questionLimit}`],
+              ["Time", formatDuration(elapsedSeconds)],
+              ["Attempts", attempts],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg bg-slate-100 p-3 dark:bg-slate-800">
                 <dt className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
@@ -199,9 +433,14 @@ export default function QuizRunner({ mode, title, description }) {
           </dl>
         </Card>
         <Card>
-          <h2 className="text-lg font-extrabold">Mode Focus</h2>
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200">
+              <Clock size={18} aria-hidden="true" />
+            </div>
+            <h2 className="text-lg font-extrabold">Mode Focus</h2>
+          </div>
           <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Easy keeps the classics close. Medium adds more neighboring countries. Hard opens the full EuropeGuesser set for a sharper challenge.
+            {focusCopy}
           </p>
         </Card>
       </aside>
