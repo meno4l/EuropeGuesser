@@ -366,9 +366,7 @@ export default function EuropeMap({
                 className={`map-country ${countryTone[status]}`}
                 strokeWidth={status === "default" ? 0.85 : 1.35}
                 vectorEffect="non-scaling-stroke"
-              >
-                <title>{country.name}</title>
-              </path>
+              />
             );
           })}
 
@@ -380,9 +378,7 @@ export default function EuropeMap({
             return (
               <g key={`${country.id}-target`} data-country-id={country.id} className="map-micro-target" aria-label={country.name}>
                 <circle className="map-micro-hit fill-transparent" cx={x} cy={y} r="11" />
-                <circle className={`map-micro-dot ${microTone[status]}`} cx={x} cy={y} r="4.25" strokeWidth="1.3" vectorEffect="non-scaling-stroke">
-                  <title>{country.name}</title>
-                </circle>
+                <circle className={`map-micro-dot ${microTone[status]}`} cx={x} cy={y} r="4.25" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />
               </g>
             );
           })}
